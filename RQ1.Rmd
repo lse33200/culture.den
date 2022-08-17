@@ -1,0 +1,304 @@
+---
+title: "RQ1: How is cultural capital distributed in the network of Danish elites?"
+output: html_document
+date: '2022-06-08'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+```
+
+
+# RQ1: How is cultural capital distributed in the network of Danish elites?
+To load network objects required for subsequent analysis into global R environment, run DEN Subgraphs.Rmd
+
+# Load packages 
+
+```{r}
+library(igraph)
+library(igraphdata)
+library(scales)
+library(dplyr)
+
+library(stargazer)
+library(ggplot2)
+library(ergm)
+library(pals)
+library(e1071)
+```
+
+
+### Projected DEN
+```{r}
+#Proportion of affiliations that are cultural
+table(culture_df$cultural_label)
+prop_cultural <- 646/5079
+print(prop_cultural) #12.7%
+
+#Distribution in Projected DEN
+summary(V(den_mine_ntwk)$ncc)
+summary(V(den_mine_largest)$ncc)
+table(V(den_mine_ntwk)$ncc) #Mean: 0.1373
+
+# Proportion with any cultural capital
+any_ncc <- induced_subgraph(den_mine_ntwk, V(den_mine_ntwk)$ncc > 0)
+print(length(V(any_ncc)$name)/length(V(den_mine_ntwk)$name)) #11.9%
+```
+
+### Largest Component DEN
+```{r}
+#Distribution in Largest Component DEN
+summary(V(den_mine_largest)$ncc)
+table(V(den_mine_largest)$ncc) #Mean: 0.1378
+
+#Individuals with high or any ncc
+high_ncc <- induced_subgraph(den_mine_largest, V(den_mine_largest)$ncc > 4)
+any_ncc <- induced_subgraph(den_mine_largest, V(den_mine_largest)$ncc > 0)
+
+# Proportion with any cultural capital
+print(length(V(any_ncc)$name)/length(V(den_mine_largest)$name)) #11.8%
+
+# Proportion with high cultural capital
+print(length(V(high_ncc)$name)/length(V(den_mine_largest)$name)) #0.06%
+```
+
+### Core DEN
+```{r}
+#Distribution in Core DEN
+table(V(core_subgraph)$ncc)
+core_any_ncc <- induced_subgraph(core_subgraph, V(core_subgraph)$ncc > 0)
+
+# Proportion with any cultural capital
+print(length(V(core_any_ncc)$name)/nrow(pe13)) #37.1%
+```
+
+### Summary Comparison
+```{r}
+summary(V(den_mine_ntwk)$ncc)
+summary(V(den_mine_largest)$ncc)
+summary(V(core_subgraph)$ncc)
+```
+
+```{r}
+#Variances
+var(V(den_mine_ntwk)$ncc)
+var(V(den_mine_largest)$ncc)
+var(V(core_subgraph)$ncc)
+```
+
+# Degree in Original Bipartite DEN
+
+```{r}
+#Degrees from Original Bipartite DEN
+types <- V(den_ntwk)$type #Separate nodes into individual- and affiliation-type
+deg <- degree(den_ntwk) #Calculate degrees
+
+#Dataframe
+degree_df <- data.frame(names = V(den_ntwk)$name, types, deg)
+degree_df <- degree_df[degree_df$types == FALSE,] #Take only individual-type nodes
+```
+
+```{r}
+#Plotting degrees
+summary(degree_df$deg)
+hist(degree_df$deg)
+
+#Degrees in core
+degree_df_core <- degree_df[in_core,]
+summary(degree_df_core$deg)
+hist(degree_df_core$deg)
+```
+
+```{r}
+#Plots of degrees
+#Title: Degree of Individual-Type Nodes
+require(gridExtra)
+require(grid)
+
+hist_full<-ggplot(degree_df, aes(x=deg)) + 
+  geom_histogram(color="black", fill="white",
+                 binwidth = 1) +
+  geom_vline(aes(xintercept=mean(deg)),
+            color="lightblue", linetype="dashed", size=1) +
+  ggtitle("Full DEN") +
+  xlab("Degree") +
+  ylab("Nodes")
+
+
+hist_core<-ggplot(degree_df_core, aes(x=deg)) + 
+  geom_histogram(color="black", fill="white",
+                 binwidth = 1) + 
+  geom_vline(aes(xintercept=mean(deg)),
+            color="lightblue", linetype="dashed", size=1) +
+  ggtitle("Core Members") +
+  xlab("Degree") +
+  ylab("Nodes") 
+
+
+grid.arrange(hist_full, hist_core, ncol=2)
+```
+
+```{r}
+# Install & load scales
+library("scales")
+
+#Plots of NCC
+ncc_df <- data.frame(name = V(den_mine_ntwk)$name, ncc = V(den_mine_ntwk)$ncc)
+ncc_df_core <- ncc_df[V(den_mine_ntwk)$name %in% core_names,]
+
+hist_ncc_full<-ggplot(ncc_df, aes(x=ncc)) + 
+  geom_histogram(color="black", fill="white",
+                 binwidth = 1) +
+  geom_vline(aes(xintercept=mean(ncc)),
+            color="lightblue", linetype="dashed", size=1) +
+  ggtitle("Full DEN") +
+  xlab("NCC") +
+  ylab("Nodes") +
+  scale_x_continuous(breaks = pretty_breaks())
+
+
+hist_ncc_core<-ggplot(ncc_df_core, aes(x=ncc)) + 
+  geom_histogram(color="black", fill="white",
+                 binwidth = 1) + 
+  geom_vline(aes(xintercept=mean(ncc)),
+            color="lightblue", linetype="dashed", size=1) +
+  ggtitle("Core Members") +
+  xlab("NCC") +
+  ylab("Nodes") +
+  scale_x_continuous(breaks = pretty_breaks())
+
+
+grid.arrange(hist_ncc_full, hist_ncc_core, ncol=2)
+```
+
+```{r}
+#Comparison with NCC
+skewness(degree_df$deg)
+skewness(V(den_mine_largest)$ncc)
+skewness(V(den_mine_ntwk)$ncc)
+```
+
+
+```{r}
+#Degree distribution and CCDF
+
+# Get the distribution of ncc
+ncc_prob <- rep(0,9)
+for (i in 1:length(V(den_mine_largest)$ncc)){
+  ncc_prob[V(den_mine_largest)$ncc[i] + 1] <- ncc_prob[V(den_mine_largest)$ncc[i] + 1] + 1
+}
+
+
+ncc_prob <- ncc_prob/length(V(den_mine_largest)$ncc) #THIS IS THE ISSUE
+print(ncc_prob)
+
+# Remove degree=0
+ncc_prob <- ncc_prob[-1] 
+
+# Remove degrees with proportion=0
+nonzero_pos <- which(ncc_prob!=0)
+ncc_prob <- ncc_prob[nonzero_pos]
+
+# Create a vector including all non-zero-probability degrees
+degr <- 1:max(V(den_mine_largest)$ncc)
+degr <- degr[nonzero_pos]
+
+#CCDF Calculate
+ncc_ccdf <- NULL
+for (i in 1:length(ncc_prob)) {
+  ncc_ccdf[i] = sum( ncc_prob[ seq(i, length(ncc_prob)) ] )
+}
+
+#CCDF Plot
+plot(ncc_ccdf ~ degr, xlab='NCC i', ylab='Complementary CDF P(X>=i)', log='xy', col='blue')
+
+```
+
+```{r}
+library(patchwork)
+
+ncc_df <- data.frame(ncc_prob, degr)
+ncc_cc_df <- data.frame(ncc_ccdf, degr)
+
+nccprob <- ggplot(ncc_df, aes(x = degr, y = ncc_prob)) + geom_point()
+nccprob <- nccprob + labs(x = "NCC", y = "Probability P(X=i)", title = "NCC Probability Distribution")
+nccprob <- nccprob + theme(plot.title = element_text(hjust = 0.5)) 
+
+ccdf <- ggplot(ncc_cc_df, aes(x = degr, y = ncc_ccdf)) + geom_point() 
+ccdf <- ccdf + scale_x_continuous(trans='log10') + scale_y_continuous(trans='log10')
+ccdf <- ccdf + labs(x = "NCC", y = "Complementary CDF P(X>=i)", title = "NCC CCDF") 
+ccdf <- ccdf + theme(plot.title = element_text(hjust = 0.5)) 
+
+par(family='CM Roman')
+nccprob + ccdf
+```
+
+# Individuals with High Networked Cultural Capital
+
+```{r}
+#Individuals with high or any ncc in Projected DEN
+high_ncc <- induced_subgraph(den_mine_ntwk, V(den_mine_ntwk)$ncc > 4)
+print(V(high_ncc)$name) #List of individuals with high cultural capital (arbitrary cutoff)
+
+#Names
+high_ncc_indivs <- V(high_ncc)$name
+```
+
+```{r}
+#Print Affiliations for the individuals with ncc of at least 6
+
+#Order individuals by amount of ncc
+top_ncc_df <- gender_df[order(-gender_df$ncc),]
+top_ncc_df[1:20,]
+
+#Print Cultural Affiliations
+for(i in 1:8){
+  print(top_ncc_df$name[i])
+  affils <- den[den$NAME == top_ncc_df$name[i],]$AFFILIATION
+  for (affil in affils){
+    if (culture_df[culture_df$den.AFFILIATION == affil,]$cultural_label == 1)
+      print(affil)
+  }
+}
+```
+
+```{r}
+# #More detail on an individual's cultural affiliations
+# for(i in 2:2){
+#   affils <- den[den$NAME == top_ncc_df$name[i],]$AFFILIATION
+#   for (affil in affils){
+#     if (culture_df[culture_df$den.AFFILIATION == affil,]$cultural_label == 1)
+#       print(culture_df[culture_df$den.AFFILIATION == affil, c(1, 2, 3, 284, 285, 286, 287, 288)])
+#   }
+# }
+```
+
+# Miscellaneous Data Checks
+
+### Checking how many ncc = 1 and deg = 1 in main network
+```{r}
+#Names with degree 1
+namesdeg1 <- degree_df[degree_df$deg ==1,]$names
+
+#Get length
+length(namesdeg1) #29382
+
+#NCC of Vertices with name in namesdeg1
+ncc_namesdeg1 <- V(den_mine_largest)[V(den_mine_largest)$name %in% namesdeg1]$ncc
+
+#How many equal 1
+table(ncc_namesdeg1) #2424
+
+#Proportion
+2424/29382 #0.082
+```
+
+### Proportion of Affiliations with a CVR
+
+```{r}
+#Proportion of Affiliations with a CVR
+length(unique(den$AFFILIATION))
+length(unique(den[den$CVR == FALSE,]$AFFILIATION))
+2625/5079
+```
+
