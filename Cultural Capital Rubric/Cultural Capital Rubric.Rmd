@@ -1,0 +1,240 @@
+---
+title: "Culture Capital Rubric"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+```
+
+# Load Data 
+
+```{r}
+install.packages("devtools")   
+library(devtools)   
+install_github("antongrau/soc.elite", force = TRUE)   
+data(den) 
+```
+
+```{r}
+library(dplyr)
+```
+
+# Extract Affiliations
+
+```{r}
+#Extract affiliations and tags
+affiliations <- data.frame(den$AFFILIATION, den$TAGS, den$CVR)
+affiliations <- unique(affiliations)
+affiliations_ref <- unique(affiliations)
+
+#head(affiliations)
+```
+
+# Read in CSV for CVRs, Purposes, Cultural Labels
+
+```{r}
+#Read in CSV
+cvr_supplement <- read.csv("purposes_cultural.csv") #Output of Translations.ipynb
+cvr_supplement <- cvr_supplement[,-1] #Remove Python Indices
+head(cvr_supplement)
+```
+
+
+```{r}
+#Add columns to affiliations
+affiliations$purpose <- cvr_supplement$Purpose
+affiliations$cvr_cultural <- cvr_supplement$Cultural
+nrow(affiliations)
+head(affiliations)
+```
+
+
+# Giving each tag its own column
+```{r}
+nrow <- length(affiliations$den.AFFILIATION)
+
+#List of unique tags
+tag_list <- levels(as.factor(den$TAGS))
+tag_list <- unique(unlist(strsplit(tag_list,", ")))
+
+#Add column for each tag
+for(tag in tag_list){
+  affiliations[tag] <- rep(0, nrow)
+}
+
+#Set column value to 1 if tag in den.TAGS
+for(i in 1:nrow){
+  # print(i)
+  for(tag in tag_list){
+    if(grepl(tag, affiliations$den.TAGS[i])){
+      affiliations[i, tag] <- 1
+    }
+  }
+}
+```
+
+
+# Export to CSV
+
+```{r}
+for_python <- data.frame(affiliation = affiliations$den.AFFILIATION, CVR = affiliations$den.CVR)
+write.csv(for_python,"affilsandcvrs.csv", row.names = FALSE)
+
+```
+
+
+# TAGS from table
+```{r}
+tags_table <- c("Culture", "Media", 
+                "Design", "Art", "Museums", "Artists", 
+                "Music", "Music venue",
+                "Films", "Theatre",
+                "Literature", "Journalists", "Magazines", "Newspapers", "Research", "Libraries",
+                "Universities", "Boarding school", "College (Business or University)", 
+                "Secondary education", "Students", "Humanities", "Academics", "Education")
+```
+
+
+# Full Dictionary
+```{r}
+culturalkeywords <- readLines("culturalkeywords.txt")
+culturalkeywords <- strsplit(tolower(culturalkeywords), ", ")[[1]]
+culturalkeywords <- unique(culturalkeywords)
+```
+
+
+#Creating Columns for Labelling
+```{r}
+#More than one tag?
+affiliations$multitag <- rowSums(affiliations[, 6:283]) > 1 #Check only tag columns
+
+#Count total tags
+affiliations$total_tags <- rowSums(affiliations[, 6:283])
+
+#Count cultural tags
+cultaff <- affiliations[, colnames(affiliations) %in% tags_table]
+cultaff$sum <- rowSums(cultaff)
+affiliations$cultural_tags <- cultaff$sum
+
+#Majority cultural
+affiliations$majority_cultural <- affiliations$cultural_tags / affiliations$total_tags >= 0.5
+```
+
+
+```{r}
+affiliations[,283:288]
+cultaff
+```
+
+# Rubric Functions
+
+```{r}
+checkCVR <- function(indx){
+  #If CVR matches >1 word in cultural keywords
+  if(affiliations$cvr_cultural[indx] == 1){
+    print("Cultural: Cultural Keyword(s) in Purpose Statement")
+    return(1)
+  }
+  else{
+    print("Not Cultural: No Cultural Keywords in Purpose Statement")
+    return(0)
+  }
+}
+
+singleTAG <- function(indx){
+  # Takes index of affiliation
+  # For affiliations with 1 tag or minority cultural tags
+  # Executes next step of flowchart, checking whether or not CVR is present
+  # Returns 1 if Cultural, 0 if Not Cultural
+  
+  #Check if affiliation has CVR
+  if(affiliations$den.CVR[indx] != FALSE){
+    print("CVR Found... Checking for Cultural Keywords")
+    return(checkCVR(indx))
+  }
+  
+  else{
+    #print("Not Cultural: No CVR")
+    return(0)
+  }
+  
+}
+
+isCultural <- function(indx){
+  # Takes index of affiliation
+  # Returns 1 if Cultural, 0 if Not Cultural
+  affil <- affiliations$den.AFFILIATION[indx]
+  #print(affil)
+  
+  #Does affiliation have more than one tag?
+  
+  #For affiliations with one tag
+  if(affiliations$multitag[indx] == 0){
+    print("One TAG... Checking for CVR")
+    return(singleTAG(indx))
+  }
+  
+  #For affiliations with multiple tags
+  else{
+    #Are the tags majority cultural?
+    if(affiliations$majority_cultural[indx] == 1){
+      print("Cultural: Majority Cultural TAGS")
+      return(1)
+    }
+    
+    #Are there no cultural tags?
+    else if(affiliations$cultural_tags[indx] == 0){
+      print("Not Cultural: No Cultural TAGS")
+      return(0)
+    }
+    
+    #Are the tags minority cultural (but non-zero)?
+    else {
+      print("Minority Cultural TAGS... Checking for CVR")
+      return(singleTAG(indx))
+    }
+  }
+  
+  
+}
+
+```
+
+# Run rubric on all affiliations
+```{r}
+rubric_output <- rep(NA, 5079)
+
+for (i in 1:nrow(affiliations)){
+  if (i%%100 == 0){
+    print(i)
+  }
+  rubric_output[i] <- isCultural(i)
+}
+
+#affiliations[50,280:285]
+#affiliations$den.TAGS[50]
+table(rubric_output)
+rubric_output[1:30]
+```
+
+
+```{r}
+#Add outputs to affiliation df
+affiliations$cultural_label <- rubric_output
+```
+
+```{r}
+write.csv(affiliations,"affiliations_culture_labeled.csv", row.names = FALSE)
+```
+
+
+```{r}
+# #Checks
+# isCultural(5)
+# affiliations[5,283:287]
+# affiliations[5,0:6]
+# 
+# affiliations[1:5, 1:5]
+# cvr_supplement[1:5,]
+```
