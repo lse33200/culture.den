@@ -1,0 +1,123 @@
+---
+title: "visNetwork"
+output: html_document
+date: '2022-07-28'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+```
+
+# Packages Load
+```{r}
+library(igraph)
+library(igraphdata)
+library(scales)
+library(dplyr)
+
+library(stargazer)
+library(ggplot2)
+library(ergm)
+library(pals)
+
+#install.packages("visNetwork")
+library(visNetwork)
+```
+
+
+# Change to visNetwork Object
+
+```{r}
+#visn_core <- visIgraph(core_subgraph)
+
+#Only keep edges representing affiliations with fewer than 20 members
+core_subgraph_vn <- delete_edges(core_subgraph, E(core_subgraph)[E(core_subgraph)$weight < 0.066])
+visn_core <- toVisNetworkData(core_subgraph_vn)
+
+summary(core_subgraph_vn)
+table(V(core_subgraph_vn)$ncc)
+
+#visNetwork(nodes = visn_core$nodes, edges = visn_core$edges)
+```
+
+
+```{r}
+visNetwork(nodes = visn_core$nodes, edges = visn_core$edges) %>% 
+  visLayout(randomSeed = 33200, improvedLayout=TRUE) %>%
+  visSave(file = "visn_test.html")
+```
+
+
+# Code from My Little Crony
+
+```{r}
+
+nodes <- visn_core$nodes
+nodes$group <- nodes$sector
+nodes$value <- nodes$ncc
+
+edges <- visn_core$edges
+edges$title <- edges$affiliation
+edge_palette <- c("#ced6e0", "#2f3542", "#eb2f06")
+edges$color <- edge_palette[edges$cultural + 1]
+#edges$value <- 0.0001*edges$weight #Still too thick—maybe just don't weight
+
+visNetwork(nodes, edges, width = "1000px", height = "580px",
+           main=list(text="Danish Elite Network Core",
+                     style='font-family:Source Sans Pro, Helvetica, sans-serif;font-weight:bold;font-size:22px;text-align:left;'),
+           submain=list(text="LSE Department of Methodology <br> Candidate Number: 33200",
+                        style='font-family:Source Sans Pro, Helvetica, sans-serif;font-style:italic;font-size:14px;text-align:left;'),
+          footer = list(text = "Node size is scaled by networked cultural capital. 
+                        Darkened edges represent cultural affiliations. 
+                        For legibility, only edges representing affiliations with fewer than 
+                        15 members are presented in the visualization (though there are isolates 
+                        in the visualization, there are no core members who are isolates in the 
+                        full network). <br> The base of the visNetwork code for this visualization is 
+                        drawn from Sophie E. Hill’s My Little Crony, available at 
+                        https://www.sophie-e-hill.com/slides/my-little-crony/",
+                        style='font-family:Source Sans Pro, Helvetica, sans-serif;font-style:italic;font-size:12px;text-align:left;')) %>%
+  visEdges(scaling=list(min=8, max=40), smooth=FALSE) %>%
+  
+  visGroups(groupname = "Army", color = "#FEA47F") %>%
+  visGroups(groupname = "Business", color = "#25CCF7") %>%
+  visGroups(groupname = "Charities", color = "#EAB543") %>%
+  visGroups(groupname = "Culture", color = "#9AECDB") %>%
+  visGroups(groupname = "Education", color = "#F97F51") %>%
+  visGroups(groupname = "Law", color = "#CAD3C8") %>%
+  visGroups(groupname = "Media", color = "#1B9CFC") %>%
+  visGroups(groupname = "Organisations", color = "#F8EFBA") %>%
+  visGroups(groupname = "Politics", color = "#58B19F") %>%
+  visGroups(groupname = "Science", color = "#bcc1c4") %>%
+  visGroups(groupname = "State", color = "#C25E8D") %>%
+  
+  visLegend(position = "right", main = "Primary Sector of Employment") %>% 
+  
+  visNodes(scaling=list(min=20, max=80), 
+           shapeProperties = list(useImageSize=FALSE, 
+                                  interpolation=FALSE)) %>%
+  visOptions(highlightNearest = list(enabled = T, degree = 1, 
+                                     hover = T, 
+                                     hideColor = 'rgba(200,200,200,0.2)',
+                                     labelOnly=FALSE),
+             nodesIdSelection=TRUE,
+             selectedBy = "sector") %>%
+  visInteraction(hover=TRUE, zoomView = TRUE,
+                 navigationButtons = TRUE,
+                 tooltipStyle = 'position: fixed;visibility:hidden;padding: 5px;
+                font-family: sans-serif;font-size:12px;
+                font-color:#000000;background-color: #e3fafa;
+                -moz-border-radius: 3px;-webkit-border-radius: 3px;border-radius: 3px;
+                 border: 0px solid #808074;box-shadow: 3px 3px 10px rgba(0, 0, 0, 0.5);
+                 max-width:200px;overflow-wrap: normal') %>%
+  visPhysics(solver = "forceAtlas2Based", 
+             maxVelocity = 1000,
+             minVelocity = 5,
+             forceAtlas2Based = list(gravitationalConstant = -150),
+             stabilization = FALSE) %>%
+  addFontAwesome() %>%
+  visLayout(randomSeed = 02143, improvedLayout=TRUE) %>%
+  #htmlwidgets::appendContent(htmltools::includeHTML("meta.html")) %>%
+  visSave(file = "visn_test.html")
+
+```
+

@@ -1,0 +1,90 @@
+---
+title: "Core Visualisation"
+output: html_document
+date: '2022-07-27'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load packages 
+
+```{r}
+library(igraph)
+library(igraphdata)
+library(scales)
+library(dplyr)
+
+library(stargazer)
+library(ggplot2)
+library(ergm)
+library(pals)
+```
+
+# Check
+```{r}
+summary(core_subgraph)
+
+length(unique(V(core_subgraph)$sector))
+sectors <- data.frame(V(core_subgraph)$name, V(core_subgraph)$sector)
+```
+
+# Colours
+```{r}
+#Colours for edges
+pal_e <- c("#dfe6e9", "#636e72")
+
+#Colors for vertices
+pal_v <- c("#FEA47F", "#25CCF7", "#EAB543", "#9AECDB", "#F97F51", "#CAD3C8",
+         "#1B9CFC", "#F8EFBA", "#58B19F", "#bcc1c4", "#C25E8D", "#3B3B98")
+```
+
+
+# Layout grouped by industry
+```{r, fig.width=7, fig.height=4}
+par(mar = c(0.5, 0.5, 0.5, 0.5))
+G_Grouped = core_subgraph
+E(G_Grouped)$weight = 0.1
+
+## Add edges with high weight between all nodes in the same group
+for(i in unique(as.factor(V(core_subgraph)$sector))) {
+    GroupV = which(V(core_subgraph)$sector == i)
+    if(length(GroupV) > 1){
+      G_Grouped = add_edges(G_Grouped, combn(GroupV, 2), attr=list(weight=0.4))
+    }
+} 
+
+#Layout based on G_Grouped
+set.seed(33200)
+LO = layout_nicely(G_Grouped)
+
+#Use layout to plot original graph
+#Core Subgraph
+plot(core_subgraph,
+     vertex.size = rescale(V(core_subgraph)$ncc, c(1.5,8)),
+     vertex.color = pal_v[as.factor(V(core_subgraph)$sector)],
+     vertex.label = ifelse(V(core_subgraph)$ncc > 3, V(core_subgraph)$name, NA),
+     vertex.label.font = 2,
+     vertex.label.family = "Helvetica",
+     vertex.label.dist= ifelse(V(core_subgraph)$name == "Lars Bentzon Goldschmidt", -0.6, 0),
+     #Only show ties for affiliations with less than 21 people
+     edge.width= ifelse(E(core_subgraph)$weight > 0.049, 8*E(core_subgraph)$weight, 0),
+     edge.color = pal_e[E(core_subgraph)$cultural + 1],
+     layout = LO,
+     asp = 0
+     )
+
+#Legend
+legend("topleft",
+       legend= c("Army", "Business", "Charities", 
+                  "Culture", "Education", "Law", "Media", 
+                  "Organisations", "Politics", "Science", 
+                  "State"), 
+       pch=20,
+       col= pal_v[c(1:11)],
+       cex = 1,
+       pt.cex = 1.25
+       )
+```
+
