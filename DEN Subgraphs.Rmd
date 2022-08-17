@@ -1,0 +1,209 @@
+---
+title: "DEN Subgraphs"
+output: html_document
+date: "2022-08-04"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+```
+
+# DEN Subgraphs for The Ties that Bind: A social network analysis of cultural capital in Denmark
+To load data required for subgraphs into R environment, run Projecting DEN.Rmd
+
+# Load Packages
+
+```{r}
+library(igraph)
+library(igraphdata)
+library(scales)
+library(dplyr)
+
+library(stargazer)
+library(ggplot2)
+library(ergm)
+library(pals)
+
+library(imputeTS)
+library(tidyr)
+```
+
+```{r}
+#Load data from soc.elite
+library(devtools)   
+install_github("antongrau/soc.elite", force = TRUE)   
+
+#Load den
+data(den) 
+
+#Load pe13
+data(pe13)
+```
+
+```{r}
+#Load data
+den_mine <- read.csv("den_mine.csv", header = TRUE) #Output of Projecting DEN.Rmd
+gender_df <- read.csv("gender_df.csv", header = TRUE) #Output of Projecting DEN.Rmd
+```
+
+# Original Biparitite DEN (den_ntwk)
+
+```{r}
+edgelist <- droplevels(data.frame(name = den$NAME, affiliation = den$AFFILIATION))
+den_ntwk <- graph_from_edgelist(as.matrix(edgelist), directed = FALSE)
+V(den_ntwk)$type <- V(den_ntwk)$name %in% edgelist[,2] #TRUE type are affiliations
+```
+
+```{r}
+summary(den_ntwk)
+```
+
+# Projected DEN (den_mine_ntwk)
+
+```{r}
+#Create graph
+den_mine_ntwk <- graph_from_edgelist(as.matrix(den_mine[,1:2]), directed = FALSE)
+
+#Edge attributes
+E(den_mine_ntwk)$affiliation <- den_mine$affiliation #Affiliation Name
+E(den_mine_ntwk)$weight <- den_mine$weight #Weight
+E(den_mine_ntwk)$cultural <- den_mine$cultural #Cultural
+
+#Reorder gender_df to match network
+gender_df <- gender_df[match(V(den_mine_ntwk)$name, gender_df$name),]
+
+#Vertex Attributes
+V(den_mine_ntwk)$gender <- gender_df$gender
+V(den_mine_ntwk)$ncc <- gender_df$ncc
+V(den_mine_ntwk)$ncc <- round(V(den_mine_ntwk)$ncc, digits = 0) #Get to round numbers
+```
+
+```{r}
+summary(den_mine_ntwk)
+```
+
+# Largest DEN Component (den_mine_largest)
+
+```{r}
+# count_components(den_mine_ntwk) #834
+# components(den_mine_ntwk)$csize
+
+#Decompose full projected network into components
+den_mine_largest <- decompose(den_mine_ntwk, mode = "strong", max.comps = 1)
+
+#Save largest component
+den_mine_largest <- den_mine_largest[[1]]
+```
+
+```{r}
+summary(den_mine_largest)
+```
+
+
+# Core DEN (core_subgraph)
+```{r}
+#Get names of core members
+core_names <- pe13$Name
+
+#Logical vector for whether or not given node is in core
+in_core <- V(den_mine_largest)$name %in% core_names
+
+#Creating subgraph
+core_subgraph <- induced_subgraph(den_mine_largest, in_core)
+```
+
+## Vertex Attributes
+```{r}
+#Reorder gender_df to match network
+pe13 <- pe13[match(V(core_subgraph)$name, pe13$Name),]
+
+#Vertex Attributes
+V(core_subgraph)$famclass <- pe13$Family_class
+V(core_subgraph)$uni <- pe13$University
+V(core_subgraph)$gymnasium <- pe13$Gymnasium
+V(core_subgraph)$age <- pe13$Age
+V(core_subgraph)$sector <- pe13$Sector
+V(core_subgraph)$educat <- pe13$Education_cat
+```
+
+```{r}
+#Imputing means and filling in data
+agemeans<- na_mean(V(core_subgraph)$age)
+V(core_subgraph)$age <- agemeans
+
+V(core_subgraph)$uni <- V(core_subgraph)$uni %>% replace_na('MISSING')
+V(core_subgraph)$gymnasium <- V(core_subgraph)$gymnasium %>% replace_na('MISSING')
+```
+
+```{r}
+summary(core_subgraph)
+```
+
+# Largest DEN Component — Cultural Split (cultural_graph, not_cultural_graph)
+
+```{r}
+#Cultural edges
+cultural_edges <- E(den_mine_largest)[E(den_mine_largest)$cultural == 1]
+not_cultural_edges <- E(den_mine_largest)[E(den_mine_largest)$cultural == 0]
+
+#Split graph
+cultural_graph <- den_mine_largest - not_cultural_edges
+not_cultural_graph <- den_mine_largest - cultural_edges
+```
+
+```{r}
+summary(cultural_graph)
+summary(not_cultural_graph)
+```
+
+# Core DEN - Cultural Split (culture_core, nonculture_core)
+
+```{r}
+#Cultural edges
+core_cultural_edges <- E(core_subgraph)[E(core_subgraph)$cultural == 1]
+core_not_cultural_edges <- E(core_subgraph)[E(core_subgraph)$cultural == 0]
+
+#Split graph
+culture_core <- core_subgraph - core_not_cultural_edges
+nonculture_core <- core_subgraph - core_cultural_edges
+```
+
+```{r}
+summary(culture_core)
+summary(nonculture_core)
+```
+
+# Exports
+
+```{r}
+#Largest Component DEN
+write_graph(den_mine_ntwk,
+  "den_mine_ntwk.csv",
+  format = "edgelist")
+  
+#Core DEN
+write_graph(core_subgraph,
+  "core_subgraph.csv",
+  format = "edgelist")
+
+#Largest Component DEN — Cultural Split
+write_graph(core_subgraph,
+  "core_subgraph.csv",
+  format = "edgelist")
+
+write_graph(core_subgraph,
+  "core_subgraph.csv",
+  format = "edgelist")
+
+#Core DEN — Cultural Split
+write_graph(core_subgraph,
+  "core_subgraph.csv",
+  format = "edgelist")
+
+write_graph(core_subgraph,
+  "core_subgraph.csv",
+  format = "edgelist")
+```
+
+
+

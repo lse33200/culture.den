@@ -1,0 +1,229 @@
+---
+title: "RQ2: How are other measures of individual status in the network related to cultural capital?"
+output: html_document
+date: '2022-07-04'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# RQ2: How are other measures of individual status in the network related to cultural capital?
+To load network objects required for subsequent analysis into global R environment, run DEN Subgraphs.Rmd
+
+# Load packages 
+```{r}
+library(igraph)
+library(igraphdata)
+library(scales)
+library(tidyr)
+library(forcats)
+library(dplyr)
+
+
+library(stargazer)
+library(ggplot2)
+library(hrbrthemes)
+library(viridis)
+
+library(ergm)
+library(pals)
+```
+
+# Network measures of importance: Largest Component DEN
+
+## Weighted Eigenvector Centrality
+```{r}
+#Calculate Centrality Measures
+
+#Weighted Eigenvector Centrality
+#evcent: This function interprets weights as connection strength. Higher weights spread the centrality better.
+eig <- evcent(den_mine_largest, weights = E(den_mine_largest)$weight)$vector
+
+#Highest weighted eigenvector centralities
+eig_sort <- sort(eig, decreasing = TRUE)
+head(eig_sort)
+```
+
+```{r}
+#Negative Binomial Model
+eig.nb <- glm.nb(V(den_mine_largest)$ncc ~ eig)
+summary(eig.nb)
+```
+
+
+## Betweenness Centrality
+```{r}
+#Betweenness Centrality
+bet <- betweenness(den_mine_largest)
+
+#Highest betweenness centralities
+bet_sort <- sort(bet, decreasing = TRUE)
+head(bet_sort)
+```
+
+```{r}
+#Negative Binomial Model
+bet.nb <- glm.nb(V(den_mine_largest)$ncc ~ bet)
+summary(bet.nb)
+```
+
+
+## Centrality Leaders
+
+```{r}
+#top in centrality measures
+bet100 <- bet_sort[1:100]
+sink("bet100.txt")
+bet100
+sink()
+
+eig100 <- eig_sort[1:100]
+sink("eig100.txt")
+eig100
+sink()
+```
+
+```{r}
+#Write to CSV
+write.csv(names(eig_sort[1:100]), "eig100.csv")
+write.csv(names(bet_sort[1:100]), "bet100.csv")
+```
+
+## Network measures of importance: Largest Component DEN (Without Cultural Ties)
+Graph without cultural ties (not_cultural_graph)
+
+## Weighted Eigenvector Centrality
+```{r}
+#evcent: This function interprets weights as connection strength. Higher weights spread the centrality better.
+eig_notcult <- evcent(not_cultural_graph, weights = E(not_cultural_graph)$weight)$vector
+
+#Highest weighted eigenvector centralities
+eig_sort_notcult <- sort(eig_notcult, decreasing = TRUE)
+head(eig_sort_notcult)
+```
+
+```{r}
+#Negative Binomial Model
+eignc.nb <- glm.nb(V(den_mine_largest)$ncc ~ eig_notcult)
+summary(eignc.nb)
+```
+
+## Betweenness Centrality
+```{r}
+#Betweenness Centrality
+bet_notcult <- betweenness(not_cultural_graph)
+
+#Highest betweenness centralities
+bet_sort_notcult <- sort(bet_notcult, decreasing = TRUE)
+head(bet_sort_notcult)
+```
+
+```{r}
+#Negative Binomial Model
+betnc.nb <- glm.nb(V(den_mine_largest)$ncc ~ bet_notcult)
+summary(betnc.nb)
+```
+
+## Outputs
+
+```{r}
+#stargazer(eig.nb, eignc.nb)
+#stargazer(bet.nb, betnc.nb)
+```
+
+
+## Plots
+
+```{r}
+#Base R
+plot(log(eig), V(den_mine_largest)$ncc, pch = 20, cex=0.4) #Plot against ncc
+plot(log(bet), V(den_mine_largest)$ncc) 
+plot(log(eig_notcult), V(not_cultural_graph)$ncc, pch = 20, cex=0.4)
+plot(log(bet_notcult), V(not_cultural_graph)$ncc)
+```
+```{r}
+#ggplot
+rq2_plotdata <- data.frame(ncc = V(den_mine_largest)$ncc,
+                           eig,
+                           eig_notcult,
+                           bet,
+                           bet_notcult)
+```
+
+
+```{r}
+#Scatter Plots
+set.seed(33200)
+
+ggplot(rq2_plotdata, aes(x = eig, y = ncc)) +
+  #scale_x_continuous(trans='log10') +
+  geom_jitter(color = "#1B9CFC", alpha = 0.5) +
+  labs (x = "Weighted Eigenvector Centrality",
+        y = "Networked Cultural Capital") 
+
+ggplot(rq2_plotdata, aes(x = bet, y = ncc)) +
+  #scale_x_continuous(trans='log10') +
+  geom_jitter(color = "#1B9CFC", alpha = 0.5) +
+  labs (x = "Betweenness Centrality",
+        y = "Networked Cultural Capital")
+```
+
+
+```{r}
+#Violin Plots
+#Source: https://r-graph-gallery.com/violin_horizontal_ggplot2.html
+rq2_plotdata$ncc <- factor(rq2_plotdata$ncc, levels = c("0", "1", "2", "3", "4", "5", "6", "7", "8"))
+
+p_eig <- rq2_plotdata %>%
+  ggplot( aes(x=eig, y=ncc, fill=ncc, color=ncc)) +
+    geom_violin(width=1, size=0.2) +
+    scale_x_continuous(trans='log10') +
+    scale_fill_viridis(discrete=TRUE) +
+    scale_color_viridis(discrete=TRUE) +
+    theme_minimal() + 
+    theme(legend.position="none") +
+    xlab("log Weighted Eigenvector Centrality") +
+    ylab("Networked Cultural Capital")
+
+p_eig_nc <- rq2_plotdata %>%
+  ggplot( aes(x=eig_notcult, y=ncc, fill=ncc, color=ncc)) +
+    geom_violin(width=1, size=0.2) +
+    scale_x_continuous(trans='log10') +
+    scale_fill_viridis(discrete=TRUE) +
+    scale_color_viridis(discrete=TRUE) +
+    theme_minimal() + 
+    theme(legend.position="none") +
+    xlab("log Weighted Eigenvector Centrality, Cultural Ties Removed") +
+    ylab("Networked Cultural Capital")
+
+p_eig
+p_eig_nc
+```
+
+
+# External measures of status: Core DEN
+
+```{r}
+#Simple tables
+table(V(core_subgraph)$famclass)
+table(V(core_subgraph)$famclass, V(core_subgraph)$ncc)
+
+#Proportions table
+classtab <- table(V(core_subgraph)$famclass, V(core_subgraph)$ncc)
+prop.table(x = classtab, margin = 1)
+```
+
+
+```{r}
+#Negative binomial regression by family class
+coredatanb <- data.frame(ncc = V(core_subgraph)$ncc, class = V(core_subgraph)$famclass)
+coredatanb$class <- as.factor(coredatanb$class)
+coredatanb <- within(coredatanb, class <- relevel(class, ref = "Working class"))
+glm.nb <- glm.nb(ncc ~ class, data = coredatanb)
+summary(glm.nb)
+
+#stargazer(glm.nb)
+```
+

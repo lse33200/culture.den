@@ -1,0 +1,179 @@
+---
+title: "Projecting the Original Bipartite DEN"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+```
+
+
+# Loading Packages
+```{r}
+library(igraph)
+library(igraphdata)
+library(scales)
+library(dplyr)
+
+library(stargazer)
+library(ggplot2)
+library(ergm)
+library(pals)
+```
+
+```{r}
+#Load data from soc.elite
+library(devtools)   
+install_github("antongrau/soc.elite", force = TRUE)   
+
+#Load den
+data(den) 
+
+#Load pe13
+data(pe13)
+```
+
+```{r}
+#Create  edge list
+edgelist <- droplevels(data.frame(name = den$NAME, affiliation = den$AFFILIATION))
+```
+
+# Projection Creation
+## Data cleaning
+```{r}
+#Check for individuals listed as affiliations
+edgelist[which(edgelist[,1] %in% edgelist[,2]),]
+
+#Remove for functioning of bipartite methods
+edgelist <- edgelist[-which(edgelist[,1] %in% edgelist[,2]),]
+```
+
+## Importing Cultural Labels for Affiliations
+```{r}
+culture_df <- read.csv("./Cultural Capital Rubric/affiliations_culture_labeled.csv")
+```
+
+## Data Frame for Projected DEN
+```{r}
+#Count of number of individuals tied to each affiliation
+out <- edgelist %>% 
+  group_by(affiliation) %>%
+  summarize(count = n()) 
+
+#List of individuals with affiliation
+out2 <- edgelist %>% 
+  group_by(affiliation) %>%
+  summarize(indivs = paste(sort(unique(name)),collapse="; "))
+
+#Combine into one data frame
+out$indivs <- out2$indivs
+out$indivs <- as.list(strsplit(out$indivs, "; "))
+out$countindivs <- lengths(out$indivs)
+rm(out2)
+
+
+#Create dataframe with triangle of that many rows
+mytriangle <- function(n) (n*(n-1)/2) #Triangle number for (n-1) where n is degree
+out$times <- mytriangle(out$countindivs)
+
+#Add culture labels to df
+culture_df <- culture_df[match(out$affiliation, culture_df$den.AFFILIATION),]
+out$culture_labels <- culture_df$cultural_label
+
+#Create df with each affiliation (and its corresponding cultural classification), mytriangle() times
+den_mine <- data.frame(affiliation = rep(out$affiliation, times = out$times),
+                       cultural = rep(out$culture_labels, times = out$times))
+```
+
+```{r}
+#Column where indivs repeats n - 1 times (First half of edgelist)
+#Create empty list
+longindivs <- list()
+
+for (i in 1:nrow(out)){
+  times_seq <- seq(out$countindivs[i] - 1, 0) #Vector counting down from n - 1
+  longindivs[[i]] <- rep(out$indivs[i][[1]], times = times_seq) #Repeat elements in indivs 
+}
+
+#Make one long vector
+longindivs <- unlist(longindivs, recursive = TRUE)
+den_mine$i1 <- longindivs #Add to new df
+```
+
+```{r}
+#Column cycling through each vector in shorter recursions (second half of edgelist)
+
+loopyindivs<- list()
+
+for (i in 1:nrow(out)){
+	n <- out$countindivs[i]
+	long <- c()
+	for (j in 2:n){
+		segment <- out$indivs[i][[1]][j:n]
+		#print(segment)
+		long <- append(long, segment)
+	}
+	loopyindivs[[i]] <- long
+}
+
+loopyindivs <- unlist(loopyindivs, recursive = TRUE)
+#length(loopyindivs) #3826021
+#nrow(den_mine) #3826021
+
+den_mine$i2 <- loopyindivs
+```
+
+```{r}
+#Move affiliation to end of the df
+den_mine <- den_mine %>% relocate("affiliation", .after = last_col())
+den_mine <- den_mine %>% relocate("cultural", .after = last_col())
+den_mine$weight <- rep((1/(out$countindivs - 1)), times = out$times)
+```
+
+# Vertex Attributes data frame
+
+## Gender and Networked Cultural Capital (ncc)
+```{r}
+#Dataframe of names and genders from original den
+gender_df <- unique(data.frame(name = den$NAME, gender = den$GENDER))
+
+#Replace NAs with "Undefined"
+gender_df[is.na(gender_df)] <- "Undefined"
+
+#Reduce to individuals present in den_mine_ntwk
+gender_df <- gender_df[which(gender_df$name %in% V(den_mine_ntwk)$name),]
+
+#Calculating NCC
+gender_df$ncc <- rep(0, 37746)
+
+for (i in 1:nrow(den_mine)){
+  if(((i %% 50000) == 0) == TRUE){
+    print(i)
+  }
+  if (den_mine$cultural[i] == 1){
+    name1 <- den_mine$i1[i]
+    name2 <- den_mine$i2[i]
+    gender_df[gender_df$name == name1,]$ncc <- gender_df[gender_df$name == name1,]$ncc + den_mine$weight[i]
+    gender_df[gender_df$name == name2,]$ncc <- gender_df[gender_df$name == name2,]$ncc + den_mine$weight[i]
+  }
+}
+```
+
+# Checks
+```{r}
+head(den_mine)
+length(unique(append(den_mine$i2, den_mine$i1))) #37746
+length(unique(den_mine$affiliation)) #5079
+
+#Comparing names with original DEN to check
+their_names <- unique(den$NAME)
+my_names <- V(den_mine_ntwk)$name
+setdiff(their_names, my_names)
+```
+
+# Exports
+```{r}
+write.csv(den_mine,"den_mine.csv", row.names = FALSE)
+write.csv(gender_df,"gender_df.csv", row.names = FALSE)
+```
+

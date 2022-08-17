@@ -1,0 +1,403 @@
+---
+title: "RQ3 ERGMs"
+output: html_document
+date: '2022-07-02'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# RQ3: How is cultural capital associated with the formation of connections among the Danish elite?
+To load network objects required for subsequent analysis into global R environment, run DEN Subgraphs.Rmd
+
+# Load Packages
+
+```{r}
+library(igraph)
+library(igraphdata)
+library(scales)
+library(dplyr)
+
+library(stargazer)
+library(ggplot2)
+library(ergm)
+library(pals)
+```
+
+# ERGM Graph Prep
+
+## Simplify graphs
+
+```{r}
+#Simplify Core DEN
+culture_core_sna <- simplify(culture_core)
+nonculture_core_sna <- simplify(nonculture_core)
+```
+
+```{r}
+#Simplify Largest Component DEN
+not_cultural_graph_sna <- simplify(not_cultural_graph)
+cultural_graph_sna <- simplify(cultural_graph)
+```
+
+## Load ERGM Packages
+```{r}
+require(intergraph)
+detach(package:igraph)
+require(sna)
+require(ergm)
+```
+
+## Transform to sna objects
+
+```{r}
+#Core DEN
+culture_core_sna<-asNetwork(culture_core_sna)
+nonculture_core_sna <-asNetwork(nonculture_core_sna)
+
+#Largest Component DEN
+not_cultural_graph_sna <- asNetwork(not_cultural_graph_sna)
+cultural_graph_sna <- asNetwork(cultural_graph_sna)
+```
+
+# Core DEN - With full set of controls
+```{r}
+ergm_cf <- ergm(nonculture_core_sna ~ edges 
+              + nodematch("sector") 
+              + nodematch("educat") 
+              + nodematch("famclass", diff = TRUE)
+              + nodecov("age")
+              + absdiff("age")
+              + nodematch("uni")
+              + nodematch ("gender")
+              + nodecov("ncc")
+              + edgecov(culture_core_sna))
+
+summary(ergm_cf)
+#stargazer(ergm_cf)
+```
+
+```{r}
+#Diagnostics
+goftest <- gof(ergm_cf)
+plot(goftest)
+```
+
+
+# Core DEN
+
+```{r}
+ergm_cp <- ergm(nonculture_core_sna ~ edges #Preserves density
+              + nodematch("gender") #Gender homophily
+              + nodecov("ncc")
+              + edgecov(culture_core_sna)) #Sharing cultural tie
+
+
+summary(ergm_cp)
+#stargazer(ergm_cp)
+```
+
+
+```{r}
+#Diagnostics
+goftest <- gof(ergm_cp)
+plot(goftest)
+```
+
+```{r}
+
+median(degree(core_subgraph))
+```
+
+
+# Largest DEN Component
+
+```{r}
+ergm_fp <- ergm(not_cultural_graph_sna ~ edges #Preserves density
+              + nodematch("gender") #Gender homophily
+              + nodecov("ncc")
+              + edgecov(cultural_graph_sna)) #Sharing cultural tie
+
+summary(ergm_fp)
+#stargazer(ergm_fp)
+```
+
+
+```{r}
+#Diagnostics
+mcmc.diagnostics(ergm_fp)
+```
+
+## Detach ERGM Packages
+```{r}
+detach(package:sna)
+require(igraph)
+```
+
+# Robustness Check - By Sector
+
+## List of affiliations by sector
+
+```{r}
+#Affiliations by other sector
+sci_affils <- affiliations[affiliations$Science == 1,]$den.AFFILIATION #Science
+pol_affils <- affiliations[affiliations$Politics == 1,]$den.AFFILIATION #Politics
+fin_affils <- affiliations[affiliations$Finance== 1,]$den.AFFILIATION #Finance
+union_affils <- affiliations[affiliations$Unions== 1,]$den.AFFILIATION #Unions
+
+#Check how many per category
+length(pol_affils)
+length(fin_affils)
+length(union_affils)
+length(sci_affils)
+
+```
+
+## Run Sector ERGM
+
+```{r}
+`%notin%` <- Negate(`%in%`)
+
+  #Remove edges which represent an organization in the list
+  selected_edges <- E(core_subgraph)[E(core_subgraph)$affiliation %in% union_affils] #Replace union_affils to get diff sector
+  other_edges <- E(core_subgraph)[E(core_subgraph)$affiliation %notin% union_affils]
+  
+  #Separate graphs
+  selected_graph <- core_subgraph - other_edges
+  other_graph <- core_subgraph - selected_edges
+  
+  #Simplify graphs
+  selected_graph <- simplify(selected_graph)
+  other_graph <- simplify(other_graph)
+  
+  #Load ERGM Packages
+  require(intergraph)
+  detach(package:igraph)
+  require(sna)
+  require(ergm)
+  
+  #Convert to statnet objects
+  selected_graph <- asNetwork(selected_graph)
+  other_graph <-asNetwork(other_graph)
+  
+  #Run ERGM
+  bootstrap_ergm <- ergm(other_graph ~ edges 
+                + nodematch("sector") 
+                + nodematch("educat") 
+                + nodematch("famclass", diff = TRUE)
+                + nodecov("age")
+                + absdiff("age")
+                + nodematch("uni")
+                + nodematch ("gender")
+                + nodecov("ncc")
+                + edgecov(selected_graph))
+  
+  print(summary(bootstrap_ergm))
+  
+  #Note coefficient on edgecov(selected_graph)
+  # coef <- summary(bootstrap_ergm)$coefficients[14,1]
+  # ncc <- summary(bootstrap_ergm)$coefficients[13,1]
+  # coef_list[i] <- coef
+  # ncc_list[i] <- ncc
+  
+  #Remove statnet
+  detach(package:sna)
+  require(igraph)
+  
+
+```
+
+
+# Robustness Check - Sampling Based on Distribution
+
+## Cultural Labeling by Affiliation Size
+```{r}
+#Logistic regression of org size vs cultural label
+logistic_size <- glm(formula = culture_labels ~ log(countindivs), family = binomial(), data = out)
+summary(logistic_size)
+
+# #Outputs:
+# stargazer(logistic_size)
+# plot(log(out$countindivs), out$culture_labels)
+```
+```{r}
+# Plot Predicted data and original data points
+ggplot(out, aes(x=log(countindivs), y=culture_labels)) + geom_point() +
+      stat_smooth(method="glm", color="red",
+                method.args = list(family=binomial)) +
+      labs(x = "log(Affiliation Size)", y = "Cultural Label")
+
+?stat_smooth
+```
+
+
+## Distribution
+```{r}
+#Smooth Distribution
+hist(E(culture_core)$weight) #Original Histogram
+plot(density(E(culture_core)$weight, bw = 0.02)) #Smoothed
+ncc_density <- density(E(culture_core)$weight, bw = 0.02) #Save smoothed density
+
+new_ncc <- sample(E(culture_core)$weight, 372, replace=TRUE) + rnorm(372, 0, ncc_density$bw) #Sample to distribution
+```
+
+## Sampling Affiliations
+```{r}
+#Take 100000 Samples of Affiliations
+
+`%notin%` <- Negate(`%in%`)
+p_vals <- rep(0,100000)
+indices <- vector("list", 100000)
+
+for (i in 1:100000){
+  if(i%%1000 == 0){
+    print(i)
+  }
+  #Random Sample of Organizations
+  org_indices <- sample.int(5079, 646) #Sample number of cultural organizations from full list
+  selected_affils <- unique(den$AFFILIATION)[org_indices] #List of sampled organizations
+    
+  #Remove edges which represent an organization in the list
+  selected_edges <- E(core_subgraph)[E(core_subgraph)$affiliation %in% selected_affils]
+  other_edges <- E(core_subgraph)[E(core_subgraph)$affiliation %notin% selected_affils]
+    
+  #Separate graphs
+  selected_graph <- core_subgraph - other_edges
+  
+  #K-S test of weights, smoothed same amount
+  sel_density <- density(E(selected_graph)$weight, bw = 0.02)
+  new_sel <- sample(E(selected_graph)$weight, 372, replace=TRUE) + rnorm(372, 0, sel_density$bw)
+  
+  ks <- ks.test(new_ncc, new_sel)
+  p <- ks$p.value
+  p_vals[i] <- p
+  indices[[i]] <- org_indices
+}
+```
+
+
+```{r}
+#Sort according to p-values
+i1 <- order(p_vals, decreasing = TRUE)
+p_vals <- p_vals[i1]
+indices <- indices[i1]
+
+#Check P Values at index 10, 100
+p_vals[10]
+p_vals[100]
+```
+
+## Run Bootstrapped ERGM
+```{r}
+#Vector to be filled with coefficients on edgecov() terms
+ncc_list <- rep(NA, 100)
+coef_list <- rep(NA, 100)
+`%notin%` <- Negate(`%in%`)
+
+#Get ERGM
+for(i in 1:100){  
+  #Random Sample of Organizations
+  dist_indices <- indices[[i]]
+  selected_affils <- unique(den$AFFILIATION)[dist_indices] #List of sampled organizations
+  
+  #Remove edges which represent an organization in the list
+  selected_edges <- E(core_subgraph)[E(core_subgraph)$affiliation %in% selected_affils]
+  other_edges <- E(core_subgraph)[E(core_subgraph)$affiliation %notin% selected_affils]
+  
+  #Separate graphs
+  selected_graph <- core_subgraph - other_edges
+  other_graph <- core_subgraph - selected_edges
+  
+  #Simplify graphs
+  selected_graph <- simplify(selected_graph)
+  other_graph <- simplify(other_graph)
+  
+  #Load ERGM Packages
+  require(intergraph)
+  detach(package:igraph)
+  require(sna)
+  require(ergm)
+  
+  #Convert to statnet objects
+  selected_graph <- asNetwork(selected_graph)
+  other_graph <-asNetwork(other_graph)
+  
+  #Run ERGM
+  bootstrap_ergm <- ergm(other_graph ~ edges 
+                + nodematch("sector") 
+                + nodematch("educat") 
+                + nodematch("famclass", diff = TRUE)
+                + nodecov("age")
+                + absdiff("age")
+                + nodematch("uni")
+                + nodematch ("gender")
+                + nodecov("ncc")
+                + edgecov(selected_graph))
+  
+  #Note coefficient on edgecov(selected_graph)
+  coef <- summary(bootstrap_ergm)$coefficients[14,1]
+  ncc <- summary(bootstrap_ergm)$coefficients[13,1]
+  coef_list[i] <- coef
+  ncc_list[i] <- ncc
+  
+  #Remove statnet
+  detach(package:sna)
+  require(igraph)
+  
+}
+```
+
+```{r}
+mean(coef_list)
+mean(ncc_list)
+```
+
+# Core DEN - Weighted ERGM (Doesn't Run)
+
+```{r}
+# #Simplify
+# core_culture_simpleweighted <- simplify(culture_core, edge.attr.comb=list(weight="sum"))
+# core_culture_simpleweighted <- remove.edge.attribute(core_culture_simpleweighted, "affiliation")
+# core_culture_simpleweighted <- remove.edge.attribute(core_culture_simpleweighted, "cultural")
+# 
+# notculture_core_simpleweighted <- simplify(nonculture_core, edge.attr.comb=list(weight="sum"))
+# notculture_core_simpleweighted <- remove.edge.attribute(notculture_core_simpleweighted, "affiliation")
+# notculture_core_simpleweighted <- remove.edge.attribute(notculture_core_simpleweighted, "cultural")
+# 
+# summary(notculture_core_simpleweighted)
+# summary(E(notculture_core_simpleweighted)$weight)
+```
+
+```{r}
+# #Load ERGM Packages
+# require(intergraph)
+# detach(package:igraph)
+# require(sna)
+# require(ergm)
+#   
+# #Convert to statnet objects
+# ccsw_sna <- asNetwork(core_culture_simpleweighted)
+# nccsw_sna <-asNetwork(notculture_core_simpleweighted)
+```
+
+```{r}
+# install.packages("ergm.count")
+# library(ergm.count)
+
+# #Run Weighted ERGM
+# ergm_weighted <- ergm(nccsw_sna ~ edges #Preserves density
+#               + nodematch("gender") #Gender homophily
+#               + nodecov("ncc")
+#               + edgecov(ccsw_sna),
+#               response = "weight",
+#               reference=~Unif(0,0.9),
+#               ergmHint=c())
+# 
+# detach(package:sna)
+# require(igraph)
+```
+
+```{r}
+# summary(ergm_weighted)
+```
