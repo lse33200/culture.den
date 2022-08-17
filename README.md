@@ -1,6 +1,6 @@
 # culture.den
 
-To load data: <br>
+To load graph objects for analysis into R environment: <br>
 
 1) Load data from __soc.elite__ <br>
 library(devtools) <br>
